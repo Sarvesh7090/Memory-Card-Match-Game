@@ -1,10 +1,11 @@
-
-import 'dart:math' as myth;
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:game/app/view/memory_game/data/models/card_model.dart';
 import 'package:game/app/view/memory_game/presentation/providers/game_state.dart';
 
-final gameProvider = StateNotifierProvider<GameNotifier, GameState>((ref){
+final gameProvider =
+StateNotifierProvider<GameNotifier, GameState>((ref) {
   return GameNotifier();
 });
 
@@ -12,39 +13,106 @@ class GameNotifier extends StateNotifier<GameState> {
   GameNotifier() : super(GameState.initial()) {
     startGame();
   }
-  int? firstIndex;
 
-  void startGame(){
+  int? firstIndex;
+  bool isBusy = false;
+
+  /// Start / Restart Game
+  void startGame() {
     final emojis = ['🍎','🐶','🚗','⭐','❤️','🎮','👑','⚽'];
 
-    final cards = [...emojis,...emojis].asMap().entries.map((e){
-      return CardEntity(id: e.key, emoji: e.value);
-    }).toList();
+    final cards = [...emojis, ...emojis]
+        .asMap()
+        .entries
+        .map((e) => CardEntity(
+      id: e.key,
+      emoji: e.value,
+    ))
+        .toList();
 
-    cards.shuffle(myth.Random());
+    cards.shuffle(math.Random());
 
-    state = GameState(cards: cards,moves: 0);
+    state = GameState(
+      cards: cards,
+      moves: 0,
+    );
+
     firstIndex = null;
+    isBusy = false;
   }
 
-  void flipCard( int index){
-    final cards = [...state.cards];
-    if(cards[index].isFlipped || cards[index].isMatch) return;
-    print("firstIndex $firstIndex");
-    cards[index] = cards[firstIndex!].copyWith(isFlipped: true);
-    if(firstIndex == null){
-      firstIndex = index;
+  /// Flip Card Logic
+  Future<void> flipCard(int index) async {
+    if (index < 0 || index >= state.cards.length) return;
+    if (isBusy) return;
 
+    final cards = [...state.cards];
+
+    // Prevent tapping same/open/matched card
+    if (cards[index].isFlipped || cards[index].isMatch) return;
+
+    // Flip current card
+    cards[index] = cards[index].copyWith(isFlipped: true);
+
+    state = state.copyWith(cards: cards);
+
+    // First selection
+    if (firstIndex == null) {
+      firstIndex = index;
       return;
     }
 
     final secondIndex = index;
-    print("condition check ${cards[firstIndex!].emoji == cards[secondIndex].emoji}");
-    if(cards[firstIndex!].emoji == cards[secondIndex].emoji){
-      cards[firstIndex!] = cards[firstIndex!].copyWith(isMatch: true);
-      cards[secondIndex] = cards[secondIndex].copyWith(isMatch: true);
+
+    // MATCH CASE
+    if (cards[firstIndex!].emoji ==
+        cards[secondIndex].emoji) {
+      cards[firstIndex!] =
+          cards[firstIndex!].copyWith(isMatch: true);
+      cards[secondIndex] =
+          cards[secondIndex].copyWith(isMatch: true);
+
+      state = state.copyWith(
+        cards: cards,
+        moves: state.moves + 1,
+      );
+
+      firstIndex = null;
+
+      _checkWin();
+      return;
     }
- firstIndex = null;
-    state = state.copyWith(cards: cards,moves: state.moves + 1);
+
+    // WRONG MATCH CASE
+    isBusy = true;
+
+    state = state.copyWith(
+      cards: cards,
+      moves: state.moves + 1,
+    );
+
+    // Delay to show both cards
+    await Future.delayed(const Duration(milliseconds: 700));
+
+    // Flip back both cards
+    cards[firstIndex!] =
+        cards[firstIndex!].copyWith(isFlipped: false);
+    cards[secondIndex] =
+        cards[secondIndex].copyWith(isFlipped: false);
+
+    state = state.copyWith(cards: cards);
+
+    firstIndex = null;
+    isBusy = false;
+  }
+
+  /// Check if game is completed
+  void _checkWin() {
+    final isWin =
+    state.cards.every((card) => card.isMatch);
+
+    if (isWin) {
+      print("🎉 You Win!");
+    }
   }
 }
